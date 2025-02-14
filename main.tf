@@ -37,7 +37,7 @@ resource "aws_ebs_snapshot" "snapshots" {
 
   tags = {
     "${var.filter_tag_key}" = var.filter_tag_value
-    "Name"                  = "Snapshot-${each.value.name}"
+    "Name"                  = "Snapshot-${volume_id}"
   }
 
   timeouts {
