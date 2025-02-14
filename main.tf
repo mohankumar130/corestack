@@ -14,23 +14,23 @@ data "aws_instance" "filtered_instances" {
 locals {
   cutoff_date_local = timeadd(timestamp(), "${-(var.cutoff_days * 86400)}s")
 
-  # Extracts all volume IDs and their names from instances
-  volume_map = {
-    for instance in data.aws_instance.filtered_instances :
-    instance.id => {
-      root_volumes = [for root in instance.root_block_device : { id = root.volume_id, name = lookup(root.tags, "Name", root.volume_id) }]
-      ebs_volumes  = [for ebs in instance.ebs_block_device : { id = ebs.volume_id, name = lookup(ebs.tags, "Name", ebs.volume_id) }]
-    }
-  }
-
-  # Flattens the list to get all volumes with names
-  all_volumes = flatten([
-    for instance in local.volume_map : concat(instance.root_volumes, instance.ebs_volumes)
+  # Extract all volumes and match them with instance tags
+  volume_map = flatten([
+    for instance in data.aws_instance.filtered_instances : concat(
+      [for root in instance.root_block_device : {
+        id         = root.volume_id
+        name       = lookup(root.tags, "Name", lookup(instance.tags, "Name", root.volume_id))
+      }],
+      [for ebs in instance.ebs_block_device : {
+        id         = ebs.volume_id
+        name       = lookup(ebs.tags, "Name", lookup(instance.tags, "Name", ebs.volume_id))
+      }]
+    )
   ])
 }
 
 resource "aws_ebs_snapshot" "snapshots" {
-  for_each = { for vol in local.all_volumes : vol.id => vol }
+  for_each = { for vol in local.volume_map : vol.id => vol }
 
   volume_id   = each.value.id
   description = "Snapshot of ${each.value.name}"
@@ -65,7 +65,7 @@ output "instance_ids" {
 }
 
 output "volume_ids" {
-  value = [for vol in local.all_volumes : vol.id]
+  value = [for vol in local.volume_map : vol.id]
 }
 
 output "snapshot_ids" {
