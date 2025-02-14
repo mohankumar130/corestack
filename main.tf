@@ -33,7 +33,7 @@ resource "aws_ebs_snapshot" "snapshots" {
   for_each = { for vol in local.volume_map : vol.id => vol }
 
   volume_id   = each.value.id
-  description = "Automate Snapshot taken from arcus2 ${each.value.name}"
+  description = "Automate Snapshot taken from arcus2-${each.value.name}"
 
   tags = {
     "${var.filter_tag_key}" = var.filter_tag_value
