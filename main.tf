@@ -13,39 +13,31 @@ data "aws_instance" "filtered_instances" {
 
 locals {
   cutoff_date_local = timeadd(timestamp(), "${-(var.cutoff_days * 86400)}s")
-}
 
-# Fetch all EBS Volumes
-data "aws_ebs_volumes" "all_volumes" {}
-
-# Create a map of volume IDs to their names
-locals {
-  volume_name_map = { 
-    for vol in data.aws_ebs_volumes.all_volumes.ids : 
-    vol => lookup(data.aws_ebs_volume.volume_details[vol].tags, "Name", vol) 
+  # Extracts all volume IDs and their names from instances
+  volume_map = {
+    for instance in data.aws_instance.filtered_instances :
+    instance.id => {
+      root_volumes = [for root in instance.root_block_device : { id = root.volume_id, name = lookup(root.tags, "Name", root.volume_id) }]
+      ebs_volumes  = [for ebs in instance.ebs_block_device : { id = ebs.volume_id, name = lookup(ebs.tags, "Name", ebs.volume_id) }]
+    }
   }
-}
 
-data "aws_ebs_volume" "volume_details" {
-  for_each  = toset(data.aws_ebs_volumes.all_volumes.ids)
-  volume_id = each.key
+  # Flattens the list to get all volumes with names
+  all_volumes = flatten([
+    for instance in local.volume_map : concat(instance.root_volumes, instance.ebs_volumes)
+  ])
 }
 
 resource "aws_ebs_snapshot" "snapshots" {
-  for_each = toset(flatten([
-    for instance in data.aws_instance.filtered_instances :
-    concat(
-      [for root in instance.root_block_device : root.volume_id],
-      [for ebs in instance.ebs_block_device : ebs.volume_id]
-    )
-  ]))
+  for_each = { for vol in local.all_volumes : vol.id => vol }
 
-  volume_id   = each.value
-  description = "Snapshot of ${lookup(local.volume_name_map, each.value, each.value)}"
+  volume_id   = each.value.id
+  description = "Snapshot of ${each.value.name}"
 
   tags = {
     "${var.filter_tag_key}" = var.filter_tag_value
-    "Name"                  = "Snapshot-${lookup(local.volume_name_map, each.value, each.value)}"
+    "Name"                  = "Snapshot-${each.value.name}"
   }
 
   timeouts {
@@ -73,10 +65,7 @@ output "instance_ids" {
 }
 
 output "volume_ids" {
-  value = flatten([
-    for inst in data.aws_instance.filtered_instances : 
-    [for bd in inst.ebs_block_device : bd.volume_id]
-  ])
+  value = [for vol in local.all_volumes : vol.id]
 }
 
 output "snapshot_ids" {
