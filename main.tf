@@ -37,7 +37,7 @@ resource "aws_ebs_snapshot" "snapshots" {
 
   tags = {
     "${var.filter_tag_key}" = var.filter_tag_value
-    "Name"                  = "Snapshot-${each.value.name}"
+    "Name"                  = "Snapshot-${each.value.id}"
     "VolumeID"              = each.value.id
     }
 
